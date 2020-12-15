@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# check if the directory is a git repository
+if [ ! -d .git ]; then
+	echo "This directory is not a git repository."
+	exit 1; fi
+
+# Variables
+BRANCH_CURRENT=$(git branch --show-current)
+BRANCH_MASTER=$(git config gitflow.branch.master)
+GIT_REMOTE_NAME=$(git config branch.$BRANCH_MASTER.remote)
+
+init() {
+	read -e -p "What is master branch name? " -i "master" branch_master
+	read -e -p "What is feature branch prefix? " -i "feature/" branch_feature
+	read -e -p "What is hotfix branch prefix? " -i "hotfix/" branch_hotfix
+	git config gitflow.branch.master $branch_master
+	git config gitflow.branch.feature $branch_feature
+	git config gitflow.branch.hotfix $branch_hotfix
+	echo "Your gitflow settings stored successfully."
+}
+_init_check() {
+	if [ -z $BRANCH_MASTER ]; then
+		echo "This repository is not configured for gitflow. Please run 'gitflow init' first."
+		exit 1; fi
+}
+
+branch_update() {
+	git pull $GIT_REMOTE_NAME ${1:-$BRANCH_CURRENT}
+}
+
+feature_init() {
+	_init_check
+	local branch=$(git config gitflow.branch.feature)$1
+	git checkout -b $branch $BRANCH_MASTER
+}
+feature_push() {
+	_init_check
+	_feature_check
+	git push -u $GIT_REMOTE_NAME $BRANCH_CURRENT
+	echo "If you haven't created a Pull Request yet, open your browser and create a PR from branch '$BRANCH_CURRENT' into '$BRANCH_MASTER'"
+}
+feature_done() {
+	_init_check
+	_feature_check
+	# Get confirmation to done the feature
+	printf "Are you sure that you sent a pull request and it has confirmed and merged to $BRANCH_MASTER? "
+	printf "With this command the branch '$BRANCH_CURRENT' will be deleted and all of the changes will be lost if pull request has not merged into $BRANCH_MASTER.\n"
+	read -e -p "Continue? (y/N) : " -i "N" confirmation
+	if [[ $confirmation != 'y' ]]; then
+		echo "Action canceled by user."
+		exit 1
+	fi
+	# do action
+	git checkout $BRANCH_MASTER
+	git branch -D $BRANCH_CURRENT
+	git push $GIT_REMOTE_NAME --delete $BRANCH_CURRENT
+	branch_update $BRANCH_MASTER
+}
+_feature_check() {
+	if [[ $BRANCH_CURRENT != $(git config gitflow.branch.feature)* ]]; then
+		echo "You should be at a feature branch for this action."
+		exit 1
+	fi
+}
+
+if [[ $1 == 'init' ]]; then init
+elif [[ $1 == 'update' ]]; then branch_update $2
+elif [[ $1 == 'feature' ]]; then
+	if [[ $2 == 'init' ]]; then feature_init $3
+	elif [[ $2 == 'push' ]]; then feature_push
+	elif [[ $2 == 'done' ]]; then feature_done
+	else echo "'$2' Command not found"; fi
+fi
